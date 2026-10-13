@@ -20,7 +20,7 @@
     "format:check": "prettier --check \"src/**/*.{js,css}\""
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",
     "@vitejs/plugin-react": "^4.4.1",
