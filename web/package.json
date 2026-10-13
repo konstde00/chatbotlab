@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "axios": "^1.18.0",
+    "axios": "^1.20.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^7.18.2",
+    "react-router-dom": "^7.18.4",
     "web-vitals": "^4.2.4"
   },
   "scripts": {
@@ -20,19 +20,19 @@
     "format:check": "prettier --check \"src/**/*.{js,css}\""
   },
   "devDependencies": {
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^14.5.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
     "@vitejs/plugin-react": "^4.4.1",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-jsx-a11y": "^6.8.0",
-    "eslint-plugin-prettier": "^5.1.3",
-    "eslint-plugin-react": "^7.34.0",
+    "eslint-plugin-prettier": "^5.5.6",
+    "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^4.6.0",
     "jsdom": "^26.1.0",
-    "prettier": "^3.2.5",
+    "prettier": "^3.9.10",
     "vite": "^6.3.5",
-    "vitest": "^4.1.11"
+    "vitest": "^5.0.2"
   }
 }
