@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import math
 import os
@@ -8,14 +7,15 @@ import random
 from asgiref.sync import sync_to_async
 from django.core.cache import cache
 from django.db import close_old_connections
-from kani import ChatMessage, ChatRole, Kani
+from kani import Kani
 
 from server.engine import get_or_create_engine_from_model
 
 from ..models import Bot, Conversation, Utterance
 from .db import db_retry
 from .moderation import moderate_message
-from .survey import context_for_prompt, render_survey_context
+from .prompt import compile_prompt, generate_system_prompt  # noqa: F401
+from .survey import context_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -89,52 +89,6 @@ _MOCK_LLM = os.getenv("MOCK_LLM", "false").lower() == "true"
 _MOCK_LLM_P50_MS = int(os.getenv("MOCK_LLM_P50_MS", "900"))
 
 
-def generate_system_prompt(bot, selected_persona=None, survey_context=None):
-    """
-    Generate a dynamic system prompt by combining the bot's base prompt
-    with instructions from the selected persona for this conversation.
-
-    Args:
-        bot: Bot instance with prompt
-        selected_persona: Persona instance selected for this conversation (can be None)
-
-    Returns:
-        str: Combined system prompt
-    """
-    try:
-        # Start with the bot's base prompt
-        system_prompt = bot.prompt.strip() if bot.prompt else ""
-
-        # Add selected persona instructions if available
-        if (
-            selected_persona
-            and hasattr(selected_persona, "name")
-            and hasattr(selected_persona, "instructions")
-        ):
-            # Combine base prompt with persona instructions
-            if system_prompt:
-                system_prompt += "\n\n"
-
-            system_prompt += f"Additional personality instructions:\nPersona '{selected_persona.name}': {selected_persona.instructions}"
-
-        # Add the participant's pre-conversation survey answers, when this
-        # bot is configured to use them. Renders to "" otherwise, which covers
-        # both an opted-out bot and a participant whose answers never arrived.
-        survey_block = render_survey_context(
-            bot.survey_context_preamble, survey_context
-        )
-        if survey_block:
-            if system_prompt:
-                system_prompt += "\n\n"
-            system_prompt += survey_block
-
-        return system_prompt
-    except Exception as e:
-        logger.error(f"Error generating system prompt: {e}")
-        # Fallback to just the bot's prompt
-        return bot.prompt.strip() if bot.prompt else ""
-
-
 async def save_chat_to_db(
     conversation_id,
     speaker_id,
@@ -143,6 +97,7 @@ async def save_chat_to_db(
     participant_id=None,
     instruction_prompt=None,
     chat_history_used=None,
+    compiled_prompt=None,
     moderation_category=None,
     moderation_scores=None,
 ):
@@ -175,6 +130,7 @@ async def save_chat_to_db(
             text=text,
             instruction_prompt=instruction_prompt,
             chat_history_used=chat_history_used,
+            compiled_prompt=compiled_prompt,
             moderation_category=moderation_category,
             moderation_scores=moderation_scores,
         )
@@ -305,18 +261,6 @@ async def run_chat_round(bot_name, conversation_id, participant_id, message):
             f"No transcript limit applied, using all {len(conversation_history)} messages from history",
         )
 
-    # Append new message after applying transcript limit
-    conversation_history.append({"role": "user", "content": message})
-
-    # Format for Kani
-    formatted_history = [
-        ChatMessage(
-            role=ChatRole.USER if msg["role"] == "user" else ChatRole.ASSISTANT,
-            content=str(msg["content"]),
-        )
-        for msg in conversation_history
-    ]
-
     # Get the selected persona for this conversation
     try:
         conversation = await _db_call(
@@ -329,10 +273,14 @@ async def run_chat_round(bot_name, conversation_id, participant_id, message):
         raise ConversationNotFound(conversation_id) from None
     selected_persona = conversation.selected_persona
 
-    # Generate dynamic system prompt combining bot prompt with selected persona
-    system_prompt = generate_system_prompt(
-        bot, selected_persona, context_for_prompt(bot, conversation)
+    prompt = compile_prompt(
+        bot,
+        selected_persona,
+        context_for_prompt(bot, conversation),
+        conversation_history,
+        message,
     )
+    system_prompt = prompt.system_prompt
 
     # Log the generated prompt for debugging
     logger.info(f"Bot '{bot.name}' system prompt:")
@@ -342,8 +290,8 @@ async def run_chat_round(bot_name, conversation_id, participant_id, message):
     )
     logger.info(f"   Final prompt length: {len(system_prompt)} characters")
 
-    # Capture the chat history sent to the LLM (excludes the new user message).
-    chat_history_json = json.dumps(conversation_history[:-1], indent=2)
+    # The history Kani is constructed with; the new message goes in as `query`.
+    chat_history_json = prompt.history_json()
 
     # Release the DB connection before the long LLM/mock call.
     # Django 5.2 + asgiref ThreadSensitiveContext gives each request its own
@@ -361,12 +309,12 @@ async def run_chat_round(bot_name, conversation_id, participant_id, message):
         response_text = "This is a mock response for load testing."
     else:
         engine = get_or_create_engine_from_model(bot.ai_model, engine_instances)
-        kani = Kani(engine, system_prompt=system_prompt, chat_history=formatted_history)
-
-        latest_user_message = formatted_history[-1].content
+        kani = Kani(
+            engine, system_prompt=system_prompt, chat_history=prompt.kani_history()
+        )
         response_text = ""
 
-        async for msg in kani.full_round(query=latest_user_message):
+        async for msg in kani.full_round(query=prompt.query):
             if hasattr(msg, "text") and isinstance(msg.text, str):
                 response_text += msg.text + " "
 
@@ -378,7 +326,8 @@ async def run_chat_round(bot_name, conversation_id, participant_id, message):
             logger.info(f"System prompt length: {len(system_prompt)}")
             logger.info(f"Chat history length: {len(chat_history_json)}")
 
-    # Append bot response
+    # Append the exchange for the next round
+    conversation_history.append({"role": "user", "content": message})
     conversation_history.append({"role": "assistant", "content": response_text})
     await cache.aset(cache_key, conversation_history, timeout=3600)
 
@@ -405,6 +354,7 @@ async def run_chat_round(bot_name, conversation_id, participant_id, message):
         participant_id=None,
         instruction_prompt=system_prompt,
         chat_history_used=chat_history_json,
+        compiled_prompt=prompt.to_dict(),
     )
 
     return response_text, bot

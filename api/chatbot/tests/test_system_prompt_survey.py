@@ -113,6 +113,49 @@ def test_existing_callers_are_unaffected(make_bot):
     assert generate_system_prompt(bot, None) == "Base prompt."
 
 
+# ── {{RECALLED_SITUATION}}: answers placed inside the prompt ──────────────────
+
+PLACEHOLDER_PROMPT = (
+    "The participant previously wrote:\n\n"
+    "<participant_context>\n{{RECALLED_SITUATION}}\n</participant_context>\n\n"
+    "Use this information when it is relevant."
+)
+
+
+@pytest.mark.django_db
+def test_placeholder_is_replaced_by_the_answers_in_place(make_bot):
+    """A prompt with the placeholder keeps its wording; answers land inside it."""
+    bot = make_bot(prompt=PLACEHOLDER_PROMPT)
+
+    assert generate_system_prompt(bot, None, ANSWERS) == (
+        "The participant previously wrote:\n\n"
+        "<participant_context>\n"
+        "Q: How stressed have you felt this week?\nA: Very stressed\n"
+        "</participant_context>\n\n"
+        "Use this information when it is relevant."
+    )
+
+
+@pytest.mark.django_db
+def test_placeholder_takes_the_preamble_with_it(make_bot):
+    """No answers appended twice: the whole block goes where the placeholder is."""
+    bot = make_bot(
+        prompt="Before {{RECALLED_SITUATION}} after.", survey_context_preamble="Intro:"
+    )
+
+    assert generate_system_prompt(bot, None, ANSWERS) == (
+        "Before Intro:\n\nQ: How stressed have you felt this week?\nA: Very stressed after."
+    )
+
+
+@pytest.mark.django_db
+def test_placeholder_is_removed_when_there_are_no_answers(make_bot):
+    """The literal token must never reach the model, e.g. for a control bot."""
+    bot = make_bot(prompt="Before {{RECALLED_SITUATION}} after.")
+
+    assert generate_system_prompt(bot, None, None) == "Before  after."
+
+
 # ── End to end: what gets recorded against each message ───────────────────────
 
 

@@ -549,6 +549,7 @@ class UtteranceAdmin(ExportMixin, BaseAdmin):
                     "text",
                     "instruction_prompt",
                     "chat_history_used",
+                    "compiled_prompt",
                 ),
                 "description": "Message content, instruction prompt (bot prompt + persona), and chat history that was passed to the LLM. For followup messages, the followup instruction prompt is sent as an admin message, not included in the system prompt.",
             },
