@@ -8,7 +8,7 @@ from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
-from kani import ChatMessage, ChatRole, Kani
+from kani import Kani
 
 from server.engine import get_or_create_engine_from_model
 
@@ -18,7 +18,8 @@ from .post_processing import (
     calculate_typing_delays,
     human_like_chunks,
 )
-from .runchat import engine_instances, generate_system_prompt, save_chat_to_db
+from .prompt import compile_prompt
+from .runchat import engine_instances, save_chat_to_db
 from .survey import context_for_prompt
 
 logger = logging.getLogger(__name__)
@@ -120,48 +121,37 @@ async def run_followup_chat_round(
             f"No transcript limit applied, using all {len(conversation_history)} messages from history",
         )
 
-    # Add followup instruction to history for AI processing (but don't save to DB)
-    conversation_history.append({"role": "user", "content": followup_instruction})
-
-    # Format for Kani
-    formatted_history = [
-        ChatMessage(
-            role=ChatRole.USER if msg["role"] == "user" else ChatRole.ASSISTANT,
-            content=str(msg["content"]),
-        )
-        for msg in conversation_history
-    ]
-
     # Get the selected persona for this conversation
     conversation = await sync_to_async(
         Conversation.objects.select_related("selected_persona").get,
     )(conversation_id=conversation_id)
     selected_persona = conversation.selected_persona
 
-    system_prompt = generate_system_prompt(
+    prompt = compile_prompt(
         bot,
         selected_persona,
         context_for_prompt(bot, conversation, is_followup=True),
+        conversation_history,
+        followup_instruction,
     )
+    system_prompt = prompt.system_prompt
 
     # Run Kani - ai_model is now required
     engine = get_or_create_engine_from_model(bot.ai_model, engine_instances)
-    kani = Kani(engine, system_prompt=system_prompt, chat_history=formatted_history)
-
-    latest_user_message = formatted_history[-1].content
+    kani = Kani(engine, system_prompt=system_prompt, chat_history=prompt.kani_history())
     response_text = ""
 
-    async for msg in kani.full_round(query=latest_user_message):
+    # Kani appends the query to its history itself, so it is not in prompt.history.
+    async for msg in kani.full_round(query=prompt.query):
         if hasattr(msg, "text") and isinstance(msg.text, str):
             response_text += msg.text + " "
 
     response_text = response_text.strip()
 
-    # Capture the chat history that was actually used (before appending bot response)
-    # Store only the chat history sent to LLM (excluding the new user message)
-    chat_history_json = json.dumps(conversation_history[:-1], indent=2)
+    chat_history_json = prompt.history_json()
 
     # Update cache with the followup instruction and response (for future context)
+    conversation_history.append({"role": "user", "content": followup_instruction})
     conversation_history.append({"role": "assistant", "content": response_text})
     cache.set(cache_key, conversation_history, timeout=3600)
 
