@@ -10,6 +10,7 @@ Coverage:
   - The engine receives system prompt + history + query, query exactly once
   - chat_history_used is exactly the history Kani was constructed with
   - Both real rounds (chat, follow-up) send the new message once
+  - Each bot message stores the full compiled prompt (Utterance.compiled_prompt)
 """
 
 import json
@@ -141,6 +142,15 @@ async def _last_history_used(conversation):
     return json.loads(u.chat_history_used)
 
 
+async def _last_compiled_prompt(conversation):
+    u = await sync_to_async(
+        Utterance.objects.filter(conversation=conversation, speaker_id="assistant")
+        .order_by("-created_time")
+        .first
+    )()
+    return u.compiled_prompt, u.instruction_prompt
+
+
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_chat_round_sends_message_once_and_records_it(
@@ -162,6 +172,11 @@ async def test_chat_round_sends_message_once_and_records_it(
         ("user", "How are you?"),
     ]
     assert await _last_history_used(conversation) == HISTORY
+
+    compiled, instruction_prompt = await _last_compiled_prompt(conversation)
+    assert compiled["history"] == HISTORY
+    assert compiled["query"] == "How are you?"
+    assert compiled["system_prompt"] == instruction_prompt
 
 
 @pytest.mark.django_db(transaction=True)
@@ -185,3 +200,8 @@ async def test_followup_round_sends_instruction_once_and_records_it(
         ("user", "[FOLLOW-UP REQUEST] nudge"),
     ]
     assert await _last_history_used(conversation) == HISTORY
+
+    compiled, instruction_prompt = await _last_compiled_prompt(conversation)
+    assert compiled["history"] == HISTORY
+    assert compiled["query"] == "[FOLLOW-UP REQUEST] nudge"
+    assert compiled["system_prompt"] == instruction_prompt

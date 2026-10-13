@@ -296,6 +296,23 @@ In the admin panel, open the bot and find **Survey Context**:
    used a blank preamble as the off switch, which made a preamble left empty
    by accident indistinguishable from a deliberate control condition.)
 
+Placing the answers inside the prompt
+   By default the answers go after the bot's prompt. To put them somewhere
+   specific, write ``{{RECALLED_SITUATION}}`` in the bot's prompt where they
+   belong. The preamble and ``Q:``/``A:`` pairs replace it, and the rest of
+   the prompt is left word for word, which matters when the prompt text was
+   approved by your IRB. For example::
+
+      The participant previously wrote:
+
+      <participant_context>
+      {{RECALLED_SITUATION}}
+      </participant_context>
+
+   When there are no answers to show (the checkbox is off, or the
+   participant's answers never arrived), the placeholder is removed, so the
+   model never sees it.
+
 ``Survey context in followup``
    Whether the answers are also included when the bot sends an idle follow-up
    message. On by default. Turn it off if follow-ups should not reference the

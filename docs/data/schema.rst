@@ -100,6 +100,9 @@ Each row corresponds to a single message (utterance) in a conversation.
 +---------------------+------------------+--------------------------------------------------------------+
 | ``chat_history_used`` | TEXT (JSON)    | Chat history that was actually passed to the LLM.            |
 +---------------------+------------------+--------------------------------------------------------------+
+| ``compiled_prompt`` | JSON             | Everything sent to the LLM: base prompt, persona, survey     |
+|                     |                  | context, history, query and the rendered system prompt.      |
++---------------------+------------------+--------------------------------------------------------------+
 | ``moderation_category`` | VARCHAR      | Moderation category that blocked this exchange; ``NULL``     |
 |                     |                  | when the message was not blocked.                            |
 +---------------------+------------------+--------------------------------------------------------------+

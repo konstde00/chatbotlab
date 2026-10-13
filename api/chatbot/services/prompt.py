@@ -18,6 +18,11 @@ from .survey import render_survey_context
 
 logger = logging.getLogger(__name__)
 
+# Where a bot's prompt wants the survey answers. Without it they are appended
+# after the prompt; with it they go exactly here, so a prompt approved word for
+# word (e.g. by an IRB) can be used unchanged.
+SURVEY_PLACEHOLDER = "{{RECALLED_SITUATION}}"
+
 
 @dataclass(frozen=True)
 class Turn:
@@ -42,8 +47,12 @@ class CompiledPrompt:
     history: tuple[Turn, ...]
     query: str
 
+    def to_dict(self) -> dict:
+        """The Utterance.compiled_prompt value."""
+        return asdict(self)
+
     def to_json(self) -> str:
-        return json.dumps(asdict(self), indent=2)
+        return json.dumps(self.to_dict(), indent=2)
 
     def kani_history(self) -> list[ChatMessage]:
         return [
@@ -93,7 +102,10 @@ def generate_system_prompt(bot, selected_persona=None, survey_context=None):
         survey_block = render_survey_context(
             bot.survey_context_preamble, survey_context
         )
-        if survey_block:
+        if SURVEY_PLACEHOLDER in system_prompt:
+            # Replaced even when empty, so the token never reaches the model.
+            system_prompt = system_prompt.replace(SURVEY_PLACEHOLDER, survey_block)
+        elif survey_block:
             if system_prompt:
                 system_prompt += "\n\n"
             system_prompt += survey_block
@@ -102,7 +114,7 @@ def generate_system_prompt(bot, selected_persona=None, survey_context=None):
     except Exception as e:
         logger.error(f"Error generating system prompt: {e}")
         # Fallback to just the bot's prompt
-        return bot.prompt.strip() if bot.prompt else ""
+        return (bot.prompt or "").strip().replace(SURVEY_PLACEHOLDER, "")
 
 
 def compile_prompt(bot, persona, survey_context, history, query):

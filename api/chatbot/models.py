@@ -116,6 +116,11 @@ class Utterance(models.Model):
         blank=True,
         help_text="The chat history (formatted as JSON) that was actually passed to the LLM for this utterance",
     )
+    compiled_prompt = models.JSONField(
+        null=True,
+        blank=True,
+        help_text="Everything sent to the LLM for this utterance: base prompt, persona, survey context, history, query and the rendered system prompt",
+    )
 
     # Set on BOTH rows of a blocked exchange — the user message that tripped
     # moderation and the canned warning sent in reply — so a single

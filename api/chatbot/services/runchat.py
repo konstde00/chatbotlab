@@ -97,6 +97,7 @@ async def save_chat_to_db(
     participant_id=None,
     instruction_prompt=None,
     chat_history_used=None,
+    compiled_prompt=None,
     moderation_category=None,
     moderation_scores=None,
 ):
@@ -129,6 +130,7 @@ async def save_chat_to_db(
             text=text,
             instruction_prompt=instruction_prompt,
             chat_history_used=chat_history_used,
+            compiled_prompt=compiled_prompt,
             moderation_category=moderation_category,
             moderation_scores=moderation_scores,
         )
@@ -352,6 +354,7 @@ async def run_chat_round(bot_name, conversation_id, participant_id, message):
         participant_id=None,
         instruction_prompt=system_prompt,
         chat_history_used=chat_history_json,
+        compiled_prompt=prompt.to_dict(),
     )
 
     return response_text, bot

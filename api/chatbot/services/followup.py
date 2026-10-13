@@ -164,6 +164,7 @@ async def run_followup_chat_round(
         participant_id=None,
         instruction_prompt=system_prompt,
         chat_history_used=chat_history_json,
+        compiled_prompt=prompt.to_dict(),
     )
 
     return response_text
