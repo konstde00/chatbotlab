@@ -11,17 +11,13 @@ import json
 import logging
 from dataclasses import asdict, dataclass
 from typing import Literal
+from xml.sax.saxutils import escape
 
 from kani import ChatMessage, ChatRole
 
 from .survey import render_survey_context
 
 logger = logging.getLogger(__name__)
-
-# Where a bot's prompt wants the survey answers. Without it they are appended
-# after the prompt; with it they go exactly here, so a prompt approved word for
-# word (e.g. by an IRB) can be used unchanged.
-SURVEY_PLACEHOLDER = "{{RECALLED_SITUATION}}"
 
 
 @dataclass(frozen=True)
@@ -70,51 +66,40 @@ class CompiledPrompt:
 
 def generate_system_prompt(bot, selected_persona=None, survey_context=None):
     """
-    Generate a dynamic system prompt by combining the bot's base prompt
-    with instructions from the selected persona for this conversation.
+    Render the system prompt sent to the model, following the standard in
+    docs/llm-integration/system-prompt-format.rst:
 
-    Args:
-        bot: Bot instance with prompt
-        selected_persona: Persona instance selected for this conversation (can be None)
+        <instructions>   the bot's prompt, word for word
+        <persona>        the conversation's persona, if it has one
+        <survey_context> the participant's survey answers, if any apply
 
-    Returns:
-        str: Combined system prompt
+    Blocks come in that fixed order, separated by a blank line, and a block
+    with nothing to say is omitted rather than left empty. Admin-written text
+    is trusted and passed unescaped; participant-written answers are escaped
+    by render_survey_context().
     """
+    instructions = (bot.prompt or "").strip()
+    blocks = (
+        [f"<instructions>\n{instructions}\n</instructions>"] if instructions else []
+    )
     try:
-        # Start with the bot's base prompt
-        system_prompt = bot.prompt.strip() if bot.prompt else ""
-
-        # Add selected persona instructions if available
-        if (
-            selected_persona
-            and hasattr(selected_persona, "name")
-            and hasattr(selected_persona, "instructions")
-        ):
-            # Combine base prompt with persona instructions
-            if system_prompt:
-                system_prompt += "\n\n"
-
-            system_prompt += f"Additional personality instructions:\nPersona '{selected_persona.name}': {selected_persona.instructions}"
-
-        # Add the participant's pre-conversation survey answers, when this
-        # bot is configured to use them. Renders to "" otherwise, which covers
-        # both an opted-out bot and a participant whose answers never arrived.
+        if selected_persona:
+            name = escape(selected_persona.name, {'"': "&quot;"})
+            blocks.append(
+                f'<persona name="{name}">\n'
+                f"{selected_persona.instructions.strip()}\n</persona>"
+            )
         survey_block = render_survey_context(
             bot.survey_context_preamble, survey_context
         )
-        if SURVEY_PLACEHOLDER in system_prompt:
-            # Replaced even when empty, so the token never reaches the model.
-            system_prompt = system_prompt.replace(SURVEY_PLACEHOLDER, survey_block)
-        elif survey_block:
-            if system_prompt:
-                system_prompt += "\n\n"
-            system_prompt += survey_block
-
-        return system_prompt
+        if survey_block:
+            blocks.append(survey_block)
     except Exception as e:
+        # Mid-conversation is the worst place to fail: fall back to the
+        # instructions block alone rather than erroring the round.
         logger.error(f"Error generating system prompt: {e}")
-        # Fallback to just the bot's prompt
-        return (bot.prompt or "").strip().replace(SURVEY_PLACEHOLDER, "")
+        blocks = blocks[:1]
+    return "\n\n".join(blocks)
 
 
 def compile_prompt(bot, persona, survey_context, history, query):

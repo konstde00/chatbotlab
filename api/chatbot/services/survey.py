@@ -9,8 +9,8 @@ be reproduced after the fact:
      which stores them on a SurveyResponse row.
   2. /api/initialize_conversation/ looks that row up and snapshots a copy onto
      Conversation.survey_context, freezing what this conversation actually saw.
-  3. render_survey_context() turns that snapshot into a block of text appended
-     to the bot's system prompt, which every Utterance records in
+  3. render_survey_context() turns that snapshot into the <survey_context>
+     block of the bot's system prompt, which every Utterance records in
      instruction_prompt.
 
 Whether a bot uses any of this is controlled by Bot.survey_context_preamble:
@@ -34,24 +34,32 @@ logger = logging.getLogger(__name__)
 
 def render_survey_context(preamble, answers):
     """
-    Render survey answers as a block of text for a bot's system prompt.
+    Render survey answers as the <survey_context> block of a system prompt.
 
     Pure: no database access and no I/O, so it is cheap to test and safe to
-    call from either the chat or the follow-up path.
+    call from either the chat or the follow-up path. The block's format is part
+    of the system prompt standard (docs/llm-integration/system-prompt-format.rst):
+
+        <survey_context>
+        <preamble>...</preamble>
+        <answers>
+        [{"question": ..., "answer": ...}, ...]
+        </answers>
+        </survey_context>
 
     Args:
         preamble: Bot.survey_context_preamble — the sentence introducing the
-            answers to the model. Blank means this bot does not use survey
-            context, and nothing is rendered.
+            answers to the model. Blank omits <preamble>; it is wording, not a
+            switch (Bot.survey_context_enabled is the switch).
         answers: list of {"question": ..., "answer": ...} dicts, in the order
             they were asked. Neither the number of questions nor the length of
             an answer is capped. Entries missing either key are skipped, so a
             row hand-edited in the admin cannot break a live conversation.
 
     Returns:
-        The rendered block, or "" when there is nothing to append. An empty
-        result is the normal no-op path — a bot that opts out and a
-        participant whose survey data never arrived both land here.
+        The block, or "" when there is nothing to show. An empty result is the
+        normal no-op path — a bot that opts out and a participant whose survey
+        data never arrived both land here.
     """
     preamble = (preamble or "").strip()
 
@@ -66,22 +74,31 @@ def render_survey_context(preamble, answers):
         return ""
 
     # Blank entries are stored but not rendered: an unresolved pipe in the
-    # survey tool sends an empty value, and "Q:" with nothing after it tells
-    # the model nothing while reading as a mistake.
-    blocks = [
-        f"Q: {str(entry['question']).strip()}\nA: {str(entry['answer']).strip()}"
+    # survey tool sends an empty value, which tells the model nothing.
+    pairs = [
+        {
+            "question": str(entry["question"]).strip(),
+            "answer": str(entry["answer"]).strip(),
+        }
         for entry in answers
         if isinstance(entry, dict)
         and str(entry.get("question", "")).strip()
         and str(entry.get("answer", "")).strip()
     ]
-    if not blocks:
+    if not pairs:
         return ""
 
-    body = "\n\n".join(blocks)
-    # No preamble means no heading, rather than inventing wording of our own:
-    # a study controls its prompts precisely.
-    return f"{preamble}\n\n{body}" if preamble else body
+    # Answers are participant-written, so they are data, never markup. JSON
+    # escapes quotes and line breaks; escaping "<" as well means no answer can
+    # close a tag. The model reads \u003c as "<", so the text is unchanged.
+    answers_json = json.dumps(pairs, indent=2, ensure_ascii=False).replace(
+        "<", "\\u003c"
+    )
+    lines = ["<survey_context>"]
+    if preamble:
+        lines.append(f"<preamble>{preamble}</preamble>")
+    lines += ["<answers>", answers_json, "</answers>", "</survey_context>"]
+    return "\n".join(lines)
 
 
 def context_for_prompt(bot, conversation, *, is_followup=False):

@@ -227,7 +227,7 @@ The JSON body:
       stores whatever questions you send.
 
       A parameter whose value does not resolve is stored but left out of the
-      bot's prompt, so a broken pipe cannot produce a dangling ``Q:`` with no
+      bot's prompt, so a broken pipe cannot send the model a question with no
       answer.
 
    For a tool that can build nested JSON safely, the ``answers`` field is still
@@ -289,29 +289,13 @@ In the admin panel, open the bot and find **Survey Context**:
 ``Survey context preamble``
    Optional wording introducing the answers to the model, for example
    ``The participant answered these questions before talking to you:``. The
-   answers are appended underneath it as ``Q:``/``A:`` pairs.
+   answers follow it as JSON, inside the prompt's ``<survey_context>`` block
+   (see :doc:`/llm-integration/system-prompt-format`).
 
    Leaving it blank passes the answers with no introduction. It does **not**
    switch the feature off — the checkbox above does that. (Earlier versions
    used a blank preamble as the off switch, which made a preamble left empty
    by accident indistinguishable from a deliberate control condition.)
-
-Placing the answers inside the prompt
-   By default the answers go after the bot's prompt. To put them somewhere
-   specific, write ``{{RECALLED_SITUATION}}`` in the bot's prompt where they
-   belong. The preamble and ``Q:``/``A:`` pairs replace it, and the rest of
-   the prompt is left word for word, which matters when the prompt text was
-   approved by your IRB. For example::
-
-      The participant previously wrote:
-
-      <participant_context>
-      {{RECALLED_SITUATION}}
-      </participant_context>
-
-   When there are no answers to show (the checkbox is off, or the
-   participant's answers never arrived), the placeholder is removed, so the
-   model never sees it.
 
 ``Survey context in followup``
    Whether the answers are also included when the bot sends an idle follow-up
@@ -343,7 +327,8 @@ Then take the survey yourself, and in the admin panel check:
 2. **Conversations** → your conversation → **Metadata** → ``survey context`` —
    the answers the conversation actually used.
 3. **Utterances** → any bot message → ``instruction prompt`` — the full prompt
-   sent to the model, with your preamble and the ``Q:``/``A:`` pairs in it.
+   sent to the model, with your preamble and the answers in its
+   ``<survey_context>`` block.
 
 If ``survey context`` is empty but the survey response row exists, the two
 ``participant_id``/``survey_id`` pairs do not match, or the Web Service ran

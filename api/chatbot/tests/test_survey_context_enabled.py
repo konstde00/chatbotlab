@@ -70,9 +70,10 @@ def test_enabled_with_no_preamble_still_gets_the_context(make_bot, make_conversa
 # ── The preamble is wording only ──────────────────────────────────────────────
 
 
-def test_preamble_is_rendered_as_a_heading_above_the_answers():
-    assert render_survey_context(PREAMBLE, ANSWERS) == (
-        f"{PREAMBLE}\n\nQ: What's been on your mind lately?\nA: My goldfish Wallace"
+def test_preamble_is_rendered_above_the_answers():
+    rendered = render_survey_context(PREAMBLE, ANSWERS)
+    assert rendered.index(f"<preamble>{PREAMBLE}</preamble>") < rendered.index(
+        "<answers>"
     )
 
 
@@ -82,9 +83,9 @@ def test_no_preamble_renders_the_answers_without_a_heading(preamble):
     No invented wording: a study controls its prompts precisely, so an absent
     preamble omits the heading rather than substituting one of our own.
     """
-    assert render_survey_context(preamble, ANSWERS) == (
-        "Q: What's been on your mind lately?\nA: My goldfish Wallace"
-    )
+    rendered = render_survey_context(preamble, ANSWERS)
+    assert "<preamble>" not in rendered
+    assert '"answer": "My goldfish Wallace"' in rendered
 
 
 @pytest.mark.parametrize("answers", [[], None, "not a list"])
@@ -105,7 +106,7 @@ def test_prompt_is_unchanged_when_disabled(make_bot, make_conversation):
     conversation = make_conversation(bot=bot, survey_context=ANSWERS)
 
     prompt = generate_system_prompt(bot, None, context_for_prompt(bot, conversation))
-    assert prompt == "Base prompt."
+    assert prompt == "<instructions>\nBase prompt.\n</instructions>"
 
 
 @pytest.mark.django_db
@@ -120,7 +121,7 @@ def test_prompt_carries_the_answers_when_enabled(make_bot, make_conversation):
     prompt = generate_system_prompt(bot, None, context_for_prompt(bot, conversation))
     assert "Base prompt." in prompt
     assert PREAMBLE in prompt
-    assert "A: My goldfish Wallace" in prompt
+    assert '"answer": "My goldfish Wallace"' in prompt
 
 
 # ── Follow-ups ────────────────────────────────────────────────────────────────

@@ -13,9 +13,11 @@ Topics Covered
 
 - **Choosing an LLM Provider:** GPT-4o, Claude Opus, Llama 3, and more  
 - **Setting API Keys:** Securely manage keys for each provider  
+- **System Prompt Format:** The standard structure every bot's prompt follows
 
 .. toctree::
    :maxdepth: 1
 
    ai-models
    api-keys
+   system-prompt-format
