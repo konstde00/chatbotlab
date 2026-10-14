@@ -68,9 +68,9 @@ def test_compiled_prompt_round_trips_through_json(compiled):
     assert data["survey_context"] == ANSWERS
     assert data["history"] == HISTORY
     assert data["query"] == "How are you?"
-    assert data["system_prompt"].startswith("Base.")
+    assert data["system_prompt"].startswith("<instructions>\nBase.\n</instructions>")
     assert "Be kind." in data["system_prompt"]
-    assert "A: Calm" in data["system_prompt"]
+    assert '"answer": "Calm"' in data["system_prompt"]
 
 
 @pytest.mark.asyncio
