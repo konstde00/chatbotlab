@@ -1,7 +1,8 @@
 #!/bin/bash
 set -e
 
-# Apply database migrations
+# Apply database migrations. chatbot overrides migrate to hold a database lock,
+# so instances that start together take turns instead of racing.
 echo "Applying database migrations..."
 python manage.py migrate --noinput
 
